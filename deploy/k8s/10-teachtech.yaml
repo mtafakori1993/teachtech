@@ -1,0 +1,92 @@
+apiVersion: v1
+kind: Namespace
+metadata: { name: teachtech, labels: { app: teachtech } }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  namespace: teachtech
+  labels: { app: teachtech, component: web, tier: frontend }
+spec:
+  replicas: 1   # static frontend with client-side state: scale freely if needed
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  selector:
+    matchLabels: { app: teachtech, component: web }
+  template:
+    metadata:
+      labels: { app: teachtech, component: web, tier: frontend }
+    spec:
+      automountServiceAccountToken: false
+      securityContext: { runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: web
+          image: teachtech-local/web:__WEB_TAG__
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: NEXT_PUBLIC_SITE_URL, value: "https://teachtech.shomaaa.ir" }
+          ports: [{ name: http, containerPort: 3000 }]
+          startupProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 3, failureThreshold: 30 }
+          readinessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 10, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 20, timeoutSeconds: 3 }
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { cpu: 500m, memory: 384Mi } }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: [ALL] } }
+          volumeMounts:
+            - { name: nextcache, mountPath: /app/.next/cache }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: nextcache, emptyDir: { sizeLimit: 256Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: web, namespace: teachtech }
+spec:
+  selector: { app: teachtech, component: web }
+  ports: [{ name: http, port: 80, targetPort: 3000 }]
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata: { name: security-headers, namespace: teachtech }
+spec:
+  headers:
+    stsSeconds: 31536000
+    stsIncludeSubdomains: false
+    contentTypeNosniff: true
+    frameDeny: false
+    customFrameOptionsValue: SAMEORIGIN
+    referrerPolicy: strict-origin-when-cross-origin
+---
+# TLS via Traefik ACME HTTP-01 resolver "le". Needs a public DNS A record
+# teachtech.shomaaa.ir -> 193.151.152.230 (DNS-only, no CDN proxy) before a certificate can be issued.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: teachtech
+  namespace: teachtech
+  labels: { app: teachtech }
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.middlewares: teachtech-security-headers@kubernetescrd
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.certresolver: le
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: teachtech.shomaaa.ir
+      http: { paths: [{ path: /, pathType: Prefix, backend: { service: { name: web, port: { number: 80 } } } }] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: default-deny-ingress, namespace: teachtech }
+spec: { podSelector: {}, policyTypes: [Ingress] }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: { name: allow-traefik-to-web, namespace: teachtech }
+spec:
+  podSelector: { matchLabels: { app: teachtech, component: web } }
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } } }]
+      ports: [{ port: 3000, protocol: TCP }]

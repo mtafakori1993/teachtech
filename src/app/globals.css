@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+/*
+ * TeachTech design tokens. Brand palette is the source of truth (brand-500, sun-400, orange-400, cream, ink, card).
+ * White text sits on brand-600 (a darker step of the brand blue) so contrast stays ≥ 4.5:1;
+ * yellow and orange surfaces always carry dark ink text.
+ */
+@theme {
+  --color-brand-50: #eaf2ff;
+  --color-brand-100: #d6e6ff;
+  --color-brand-200: #b3cffb;
+  --color-brand-300: #82b0f6;
+  --color-brand-400: #5593f0;
+  --color-brand-500: #2f80ed;
+  --color-brand-600: #1e6bd8;
+  --color-brand-700: #1859b8;
+  --color-brand-800: #1a4a93;
+  --color-brand-900: #173a73;
+
+  --color-sun-100: #fdf3d0;
+  --color-sun-300: #f7dc85;
+  --color-sun-400: #f2c94c;
+  --color-sun-500: #e0b232;
+
+  --color-flame-100: #fde6d0;
+  --color-flame-400: #f2994a;
+  --color-flame-500: #e8832a;
+  --color-flame-600: #cf6d17;
+
+  --color-cream: #fffdf5;
+  --color-cream-200: #f8f3e1;
+  --color-card: #eaf2ff;
+  --color-ink: #1f2937;
+  --color-ink-700: #374151;
+  --color-ink-600: #4b5563;
+  --color-ink-500: #566070;
+  --color-line: #d9e4f5;
+  --color-line-strong: #b9cbe6;
+
+  --color-success-600: #116632;
+  --color-success-100: #dff5e6;
+  --color-warning-700: #92400e;
+  --color-warning-100: #fef0c7;
+  --color-danger-600: #b91c1c;
+  --color-danger-100: #fde4e4;
+  --color-disabled: #e5e7eb;
+  --color-disabled-text: #6b7280;
+
+  --font-sans: var(--font-vazir), "Vazirmatn", Tahoma, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 18px;
+  --radius-xl: 26px;
+
+  --shadow-soft: 0 1px 2px rgb(31 41 55 / 0.05), 0 6px 18px -6px rgb(47 128 237 / 0.18);
+  --shadow-lift: 0 2px 4px rgb(31 41 55 / 0.06), 0 16px 34px -12px rgb(47 128 237 / 0.28);
+  --shadow-pop: 0 20px 50px -12px rgb(31 41 55 / 0.35);
+
+  --animate-rise: rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade: fade 0.25s ease both;
+  --animate-sheet: sheet 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+  @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes sheet { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+}
+
+@layer base {
+  html { background: var(--color-cream); color: var(--color-ink); scroll-padding-top: 5.5rem; -webkit-text-size-adjust: 100%; }
+  body { font-family: var(--font-sans); background: var(--color-cream); line-height: 1.85; overflow-x: clip; }
+  h1, h2, h3, h4 { font-weight: 700; line-height: 1.5; letter-spacing: -0.01em; text-wrap: balance; }
+  p { text-wrap: pretty; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--color-brand-500); outline-offset: 2px; border-radius: 6px; }
+  ::selection { background: var(--color-sun-300); color: var(--color-ink); }
+  button, [role="button"], a, summary, select, label[for] { -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), [role="button"] { cursor: pointer; }
+  [dir="ltr"], .ltr { unicode-bidi: isolate; }
+  input, textarea, select { font: inherit; }
+}
+
+@layer utilities {
+  .tabular { font-variant-numeric: tabular-nums; }
+  .container-x { width: 100%; max-width: 76rem; margin-inline: auto; padding-inline: 1rem; }
+  @media (min-width: 640px) { .container-x { padding-inline: 1.5rem; } }
+  .safe-b { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+  .scroll-thin { scrollbar-width: thin; scrollbar-color: var(--color-line-strong) transparent; }
+  .no-scrollbar { scrollbar-width: none; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .dots-bg { background-image: radial-gradient(var(--color-line-strong) 1.2px, transparent 1.2px); background-size: 20px 20px; }
+  .grid-paper {
+    background-image: linear-gradient(to right, rgb(47 128 237 / 0.09) 1px, transparent 1px), linear-gradient(to bottom, rgb(47 128 237 / 0.09) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
+}
+
+/* KaTeX output must stay LTR inside RTL text */
+.katex { direction: ltr; unicode-bidi: isolate; font-size: 1.08em; }
+.katex-display { direction: ltr; overflow-x: auto; overflow-y: hidden; padding-block: 0.25rem; }
+
+/* Certificate / print */
+@media print {
+  @page { size: A4 landscape; margin: 0; }
+  html, body { background: #fff !important; }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+  .cert-sheet { box-shadow: none !important; border-radius: 0 !important; width: 100% !important; max-width: none !important; margin: 0 !important; }
+}
+.print-only { display: none; }
