@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Registers TeachTech as linked Persian + English "tp_project" entries on tafakorpardazan.ir (WordPress REST API).
+ * Registers TeachTech as linked Persian + English "tp_project" entries on tafakorpardazan.ir (WordPress + Polylang REST API).
  * Credentials come from the environment only (never committed):
  *   PORTFOLIO_USER=… PORTFOLIO_APP_PASSWORD="xxxx xxxx …" node scripts/portfolio-publish.mjs [--publish] [--live-url=https://…]
- * Default status is `draft`. Pass --live-url only after the deployment has been verified; without it no live link or "live" wording is added.
- * Idempotent: media are reused by slug, projects are updated by slug. Same conventions as the SHOMAAA publisher.
+ * Default status is `draft`. Idempotent: media are reused by slug, projects are updated by slug (never duplicated).
+ * Language linking uses the site's own POST /tp/v1/translations endpoint.
  */
 import path from "node:path";
 import sharp from "sharp";
@@ -14,9 +14,9 @@ const SITE = process.env.PORTFOLIO_SITE ?? "https://tafakorpardazan.ir";
 if (!process.env.PORTFOLIO_USER || !process.env.PORTFOLIO_APP_PASSWORD) { console.error("PORTFOLIO_USER / PORTFOLIO_APP_PASSWORD required"); process.exit(1); }
 const AUTH = "Basic " + Buffer.from(`${process.env.PORTFOLIO_USER}:${process.env.PORTFOLIO_APP_PASSWORD}`).toString("base64");
 const STATUS = process.argv.includes("--publish") ? "publish" : "draft";
-const LIVE = process.argv.find((a) => a.startsWith("--live-url="))?.split("=")[1];
+const LIVE = process.argv.find((a) => a.startsWith("--live-url="))?.split("=")[1] ?? "https://teachtech.shomaaa.ir";
 
-async function api(p, init = {}, tries = 4) {
+async function api(p, init = {}, tries = 8) {
   let last;
   for (let i = 1; i <= tries; i++) {
     try {
@@ -25,18 +25,20 @@ async function api(p, init = {}, tries = 4) {
       const json = text ? JSON.parse(text.slice(text.indexOf(text.trimStart()[0] === "[" ? "[" : "{"))) : null;
       if (!r.ok) throw Object.assign(new Error(`${r.status} ${json?.message ?? ""}`), { status: r.status });
       return json;
-    } catch (e) { last = e; if (e.status && e.status < 500) break; await new Promise((r) => setTimeout(r, 2000 * i)); }
+    } catch (e) { last = e; if (e.status && e.status < 500) break; await new Promise((r) => setTimeout(r, 1500 * i)); }
   }
   throw last;
 }
 const post = (p, o) => api(p, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(o) });
 
+// Genuine screenshots of https://teachtech.shomaaa.ir (scripts/capture.mjs). The 4:3 cover is a photographic scene generated through
+// OpenRouter whose device screens were filled with real screenshots (scripts/generate-mockup-scene.mjs + compose-mockup.mjs).
 const images = [
-  { src: "screenshots/01-home-desktop.png", name: "teachtech-home", alt: { fa: "صفحه اصلی TeachTech در نسخه دسکتاپ", en: "TeachTech homepage on desktop" }, w: 1440, crop: 1500 },
+  { src: "screenshots/portfolio/teachtech-mockup-4x3.webp", name: "teachtech-mockup-4x3", raw: true, alt: { fa: "TeachTech روی لپ‌تاپ و موبایل: صفحه اصلی سامانه آموزش آنلاین", en: "TeachTech on a laptop and a phone: the online learning platform homepage" } },
   { src: "screenshots/02-catalog-desktop.png", name: "teachtech-catalog", alt: { fa: "فهرست دوره‌ها با فیلتر پایه، سطح و قیمت", en: "Course catalog with grade, level and price filters" }, w: 1440 },
   { src: "screenshots/03-course-detail-desktop.png", name: "teachtech-course", alt: { fa: "صفحه دوره با سرفصل‌ها و پیش‌نمایش رایگان", en: "Course page with curriculum and free previews" }, w: 1440, crop: 1700 },
-  { src: "screenshots/05-student-dashboard-desktop.png", name: "teachtech-student-dashboard", alt: { fa: "داشبورد دانش‌آموز با پیشرفت و آزمون‌های پیش‌رو", en: "Student dashboard with progress and upcoming quizzes" }, w: 1440, crop: 1500 },
   { src: "screenshots/06-video-learning-desktop.png", name: "teachtech-learning", alt: { fa: "صفحه یادگیری با پخش‌کننده و سرفصل‌ها", en: "Learning page with the player and curriculum" }, w: 1440 },
+  { src: "screenshots/05-student-dashboard-desktop.png", name: "teachtech-student-dashboard", alt: { fa: "داشبورد دانش‌آموز با پیشرفت و آزمون‌های پیش‌رو", en: "Student dashboard with progress and upcoming quizzes" }, w: 1440, crop: 1500 },
   { src: "screenshots/10-quiz-results-desktop.png", name: "teachtech-quiz-results", alt: { fa: "نتیجه آزمون با مرور پاسخ‌ها و فرمول‌ها", en: "Quiz results with answer review and equations" }, w: 1440, crop: 1700 },
   { src: "screenshots/12-certificate-desktop.png", name: "teachtech-certificate", alt: { fa: "گواهی پایان دوره قابل چاپ", en: "Printable completion certificate" }, w: 1440, crop: 900 },
   { src: "screenshots/14-instructor-dashboard-desktop.png", name: "teachtech-instructor", alt: { fa: "داشبورد مدرس", en: "Instructor dashboard" }, w: 1440, crop: 1100 },
@@ -47,11 +49,15 @@ const images = [
 
 async function uploadImage(img) {
   const found = await api(`/wp/v2/media?search=${img.name}&per_page=20&_fields=id,source_url,slug`);
-  const hit = found.find((m) => m.slug === img.name);
+  const hit = found.find((m) => m.slug === img.name || m.slug.replace(/-\d+$/, "") === img.name);
   if (hit) return hit;
-  let s = sharp(path.join(ROOT, img.src));
-  if (img.crop) { const meta = await s.metadata(); s = s.extract({ left: 0, top: 0, width: meta.width, height: Math.min(meta.height, Math.round(img.crop * (meta.width / img.w))) }); }
-  const buf = await s.resize({ width: img.w, withoutEnlargement: true }).webp({ quality: 84 }).toBuffer();
+  let buf;
+  if (img.raw) buf = await sharp(path.join(ROOT, img.src)).toBuffer();
+  else {
+    let s = sharp(path.join(ROOT, img.src));
+    if (img.crop) { const meta = await s.metadata(); s = s.extract({ left: 0, top: 0, width: meta.width, height: Math.min(meta.height, Math.round(img.crop * (meta.width / img.w))) }); }
+    buf = await s.resize({ width: img.w, withoutEnlargement: true }).webp({ quality: 84 }).toBuffer();
+  }
   const media = await api("/wp/v2/media", { method: "POST", headers: { "Content-Type": "image/webp", "Content-Disposition": `attachment; filename="${img.name}.webp"` }, body: buf });
   await post(`/wp/v2/media/${media.id}`, { alt_text: img.alt.fa, title: img.alt.fa });
   return { id: media.id, source_url: media.source_url };
@@ -82,69 +88,69 @@ const shots = (names, lang) => `<!-- wp:html -->\n<div style="display:grid;grid-
 const h = (t) => `<!-- wp:heading -->\n<h2>${t}</h2>\n<!-- /wp:heading -->`;
 const p = (t) => `<!-- wp:paragraph -->\n<p>${t}</p>\n<!-- /wp:paragraph -->`;
 const ul = (items) => `<!-- wp:list -->\n<ul class="wp-block-list">${items.map((i) => `<li>${i}</li>`).join("")}</ul>\n<!-- /wp:list -->`;
-const btn = (label) => LIVE ? `<!-- wp:html -->\n<p style="margin-block:24px"><a href="${LIVE}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 28px;border-radius:999px;background:#F2994A;color:#1F2937;font-weight:700;text-decoration:none">${label}</a></p>\n<!-- /wp:html -->` : "";
+const btn = (label) => `<!-- wp:html -->\n<p style="margin-block:24px"><a href="${LIVE}" target="_blank" rel="noopener" style="display:inline-block;padding:14px 28px;border-radius:999px;background:#F2994A;color:#1F2937;font-weight:700;text-decoration:none">${label}</a></p>\n<!-- /wp:html -->`;
 
 const CONTENT = {
   fa: [
-    btn("مشاهده TeachTech"),
-    p("TeachTech یک پلتفرم آموزش آنلاین ریاضی (راست‌چین و فارسی) است با دوره‌های ویدیویی، آزمون‌های تعاملی، داشبورد دانش‌آموز، مدرس و مدیر آموزشگاه و گواهی پایان دوره."),
-    p("<strong>سفارش آموزشگاه کاویان</strong> · مدرس ریاضی: آقای امیر کاویان · طراحی و توسعه: تفکر پردازان"),
-    shots(["teachtech-home"], "fa"),
-    h("تجربهٔ یادگیری"),
-    ul(["فهرست دوره‌ها با جست‌وجو و فیلتر پایه، مبحث، سطح، قیمت و مرتب‌سازی", "صفحهٔ دوره با سرفصل، درس‌های پیش‌نمایش رایگان، منابع و سؤالات متداول", "صفحهٔ یادگیری با پخش‌کنندهٔ ویدیو (سرعت، زیرنویس، ادامه از آخرین نقطه)، یادداشت، نشانه‌گذاری و پرسش و پاسخ هر درس", "آزمون زمان‌دار با تصحیح خودکار، علامت‌گذاری سؤال، حالت تمرین و مرور پاسخ‌ها همراه با فرمول‌های ریاضی (KaTeX)", "گواهی پایان دوره با شرط تکمیل درس‌ها و قبولی در آزمون، قابل چاپ یا ذخیره به‌صورت PDF"]),
+    p("<strong>سامانه جامع آموزش مجازی و مدیریت دوره‌های آموزشی ویژه آموزشگاه کاویان</strong>"),
+    btn("مشاهده سامانه TeachTech: teachtech.shomaaa.ir"),
+    p("سامانه TeachTech با هدف ایجاد تجربه‌ای یکپارچه برای ارائه دوره‌های آموزشی، مدیریت فرایند یادگیری و دسترسی آسان دانش‌آموزان به محتوای آموزشی طراحی و توسعه یافته است. این پلتفرم با تمرکز بر آموزش ریاضی و نیازهای آموزشگاه کاویان، بستری منظم برای معرفی دوره‌ها، مشاهده محتوای آموزشی و پیگیری پیشرفت تحصیلی فراهم می‌کند."),
+    p("در طراحی این سامانه، تجربه کاربری فارسی، نمایش صحیح راست‌چین، سازگاری با دستگاه‌های مختلف و دسترسی آسان از طریق موبایل مورد توجه قرار گرفته است."),
+    p("این پروژه به سفارش <strong>آموزشگاه کاویان</strong> و <strong>آقای امیر کاویان</strong>، مدرس ریاضی، توسط شرکت <strong>تفکر پردازان</strong> توسعه داده شده است."),
+    shots(["teachtech-mockup-4x3"], "fa"),
+    h("قابلیت‌های پروژه"),
+    ul(["طراحی و پیاده‌سازی فروشگاه دوره‌های آموزشی: فهرست دوره‌ها با جست‌وجو و فیلتر پایه، مبحث، سطح و قیمت، سبد خرید و کد تخفیف (پرداخت در این نسخه شبیه‌سازی‌شده است)", "معرفی دوره‌ها، سرفصل‌ها، درس‌های پیش‌نمایش رایگان و پروفایل مدرس", "رابط یادگیری: مشاهده جلسات با پخش‌کننده ویدیو (سرعت پخش، زیرنویس، ادامه از آخرین نقطه)، یادداشت، نشانه‌گذاری و پرسش و پاسخ هر درس", "داشبورد دانش‌آموز: پیشرفت یادگیری، ادامه درس، تقویم و برنامه مطالعه، سفارش‌ها و پروفایل", "آزمون‌های آنلاین زمان‌دار با تصحیح خودکار، حالت تمرین و نمایش نتایج و توضیح پاسخ‌ها", "گواهی پایان دوره با شرط تکمیل درس‌ها و قبولی در آزمون، قابل چاپ یا ذخیره به‌صورت PDF (گواهی رسمی دولتی نیست)", "پنل‌های مدیریت: داشبورد مدرس (دوره‌ها، سرفصل‌ها، بانک سؤال، بررسی تکلیف) و داشبورد مدیر آموزشگاه (دوره‌ها، سفارش‌ها، کد تخفیف، گواهی‌ها، تنظیمات)", "طراحی واکنش‌گرا و راست‌چین برای موبایل، تبلت و دسکتاپ", "وب‌اپلیکیشن قابل نصب (PWA): مانیفست، آیکون، سرویس‌ورکر، صفحه آفلاین و راهنمای نصب برای iPhone؛ پخش ویدیو و دسترسی کامل به دوره‌ها در حالت آفلاین پشتیبانی نمی‌شود"]),
     shots(["teachtech-catalog", "teachtech-course", "teachtech-learning", "teachtech-quiz-results"], "fa"),
-    h("داشبوردها"),
-    ul(["دانش‌آموز: پیشرفت، ادامهٔ یادگیری، تقویم و برنامهٔ مطالعه، آزمون‌ها، گواهی‌ها، سفارش‌ها و پروفایل", "مدرس: مدیریت دوره و سرفصل، بانک سؤال و آزمون، بررسی تکلیف نوشتاری، پرسش و پاسخ، اطلاعیه و تحلیل", "مدیر آموزشگاه: دوره‌ها، مدرسان، دانش‌آموزان، ثبت‌نام‌ها، سفارش‌ها، کد تخفیف، گواهی‌ها و تنظیمات"]),
     shots(["teachtech-student-dashboard", "teachtech-instructor", "teachtech-admin", "teachtech-certificate"], "fa"),
-    h("اپلیکیشن قابل نصب (PWA) و موبایل"),
-    p("مانیفست، آیکون‌ها (شامل maskable)، سرویس‌ورکر با کش محدود و صفحهٔ آفلاین، اعلان نسخهٔ جدید و بنر نصب غیرمزاحم برای مرورگرهای پشتیبان؛ برای iPhone راهنمای افزودن به صفحهٔ اصلی نمایش داده می‌شود. ویدیو و دوره‌ها به‌صورت آفلاین پشتیبانی نمی‌شوند."),
     shots(["teachtech-mobile-home", "teachtech-pwa-install"], "fa"),
     h("فناوری و کیفیت"),
-    p("Next.js (App Router)، React، TypeScript سخت‌گیر، Tailwind CSS، فونت وزیر (محلی). ۵۰ تست واحد و ۷۵ تست انتها‌به‌انتها (Playwright) از جمله PWA، واکنش‌گرایی از ۳۶۰ تا ۱۴۴۰ پیکسل و بررسی دسترس‌پذیری با axe. استقرار دستی با Docker روی Kubernetes (k3s) آماده شده است."),
+    p("Next.js (App Router)، React، TypeScript سخت‌گیر، Tailwind CSS و فونت وزیر (محلی). ۵۰ تست واحد و ۷۵ تست انتها‌به‌انتها با Playwright (شامل PWA، واکنش‌گرایی از ۳۶۰ تا ۱۴۴۰ پیکسل و بررسی دسترس‌پذیری با axe). استقرار دستی با Docker روی Kubernetes (k3s) و HTTPS."),
     h("وضعیت و محدودیت‌ها"),
-    p("این نسخه <strong>فقط فرانت‌اند</strong> است: ورود، پرداخت و استعلام گواهی شبیه‌سازی‌شده‌اند، داده‌ها فقط در مرورگر کاربر ذخیره می‌شوند، درگاه پرداخت واقعی یا سرور متصل نیست و گواهی‌ها مدرک رسمی نیستند. امتیازها و آمار نمایش‌داده‌شده نمونه هستند."),
+    p("نسخه فعلی <strong>فقط فرانت‌اند</strong> است: ورود، پرداخت و استعلام گواهی شبیه‌سازی‌شده‌اند، داده‌ها فقط در مرورگر کاربر ذخیره می‌شوند و سرور یا درگاه پرداخت واقعی متصل نیست. امتیازها و آمار نمایش‌داده‌شده نمونه هستند."),
     h("مشخصات پروژه"),
-    ul(["سفارش‌دهنده: آموزشگاه کاویان (مدرس: آقای امیر کاویان)", "حوزه: آموزش آنلاین ریاضی · زبان: فارسی · طراحی: واکنش‌گرا و راست‌چین", "طراحی و توسعه: تفکر پردازان — <a href=\"https://tafakorpardazan.ir\">tafakorpardazan.ir</a>"]),
-    btn("مشاهده TeachTech"),
+    ul(["سفارش‌دهنده: آموزشگاه کاویان · مدرس ریاضی: آقای امیر کاویان", "حوزه: آموزش آنلاین ریاضی · زبان: فارسی · طراحی: واکنش‌گرا و راست‌چین", `وب‌سایت: <a href="${LIVE}" target="_blank" rel="noopener">${LIVE}</a>`, "طراحی و توسعه: تفکر پردازان — <a href=\"https://tafakorpardazan.ir\">tafakorpardazan.ir</a>"]),
+    btn("مشاهده سامانه TeachTech"),
   ].join("\n\n"),
   en: [
-    btn("Visit TeachTech"),
-    p("TeachTech is a Persian, right-to-left online mathematics learning platform with video lessons, interactive quizzes, student, instructor and academy-admin dashboards, and completion certificates."),
-    p("<strong>Commissioned by Kavian Academy</strong> · Mathematics instructor: Mr. Amir Kavian · Designed and developed by Tafakor Pardazan"),
-    shots(["teachtech-home"], "en"),
-    h("Learning experience"),
-    ul(["Course catalog with search, grade/topic/level/price filters and sorting", "Course pages with curriculum, free preview lessons, resources and FAQs", "A learning page with a video player (speed, captions, resume position), notes, bookmarks and per-lesson Q&A", "Timed quizzes with automatic grading, question marking, practice mode and answer review with typeset equations (KaTeX)", "Completion certificates that require finished lessons and a passing final quiz; printable or savable as PDF"]),
+    p("<strong>A Persian-first online education platform designed for mathematics courses and digital learning.</strong>"),
+    btn("Visit TeachTech: teachtech.shomaaa.ir"),
+    p("TeachTech is an online learning platform developed to provide a structured and accessible educational experience for Kavian Academy. Focused initially on mathematics education, the platform brings course discovery, learning content, student progress, and educational workflows together in a responsive interface."),
+    p("The project emphasizes Persian-language usability, right-to-left layouts, mobile accessibility, and a consistent learning experience across desktop and mobile devices."),
+    p("TeachTech was commissioned by <strong>Kavian Academy</strong> and <strong>Mr. Amir Kavian</strong>, a mathematics teacher, and developed by <strong>Tafakor Pardazan</strong>."),
+    shots(["teachtech-mockup-4x3"], "en"),
+    h("Key features"),
+    ul(["A course storefront: catalog with search and grade, topic, level and price filters, a cart and discount codes (payment is simulated in this release)", "Course introductions, curricula, free preview lessons and an instructor profile", "A learning interface: lessons with a video player (playback speed, captions, resume position), notes, bookmarks and per-lesson Q&A", "A student dashboard: learning progress, continue learning, calendar and study plan, orders and profile", "Timed online quizzes with automatic grading, a practice mode, results and answer explanations", "Completion certificates that require finished lessons and a passing quiz; printable or savable as PDF (not an official government credential)", "Management panels: an instructor dashboard (courses, curriculum, question bank, assignment review) and an academy-admin dashboard (courses, orders, discount codes, certificates, settings)", "A responsive, right-to-left design for mobile, tablet and desktop", "An installable web app (PWA): manifest, icons, service worker, offline page and iPhone install instructions; video playback and full offline course access are not supported offline"]),
     shots(["teachtech-catalog", "teachtech-course", "teachtech-learning", "teachtech-quiz-results"], "en"),
-    h("Dashboards"),
-    ul(["Student: progress, continue learning, calendar and study plan, quizzes, certificates, orders and profile", "Instructor: course and curriculum management, question bank and quizzes, written-assignment review, Q&A, announcements and analytics", "Academy admin: courses, instructors, students, enrollments, orders, discount codes, certificates and settings"]),
     shots(["teachtech-student-dashboard", "teachtech-instructor", "teachtech-admin", "teachtech-certificate"], "en"),
-    h("Installable app (PWA) and mobile"),
-    p("Web app manifest, icons (including maskable), a service worker with deliberately limited caching and an offline page, an update notice, and a non-intrusive install banner on supporting browsers; iPhone users get add-to-home-screen instructions. Offline video or full offline course access is not supported."),
     shots(["teachtech-mobile-home", "teachtech-pwa-install"], "en"),
     h("Technology and quality"),
-    p("Next.js (App Router), React, strict TypeScript, Tailwind CSS and a locally bundled Vazir font. 50 unit tests and 75 end-to-end tests (Playwright) covering the PWA, responsiveness from 360 to 1440px and accessibility checks with axe. A manual Docker/Kubernetes (k3s) deployment has been prepared."),
+    p("Next.js (App Router), React, strict TypeScript, Tailwind CSS and a locally bundled Vazir font. 50 unit tests and 75 end-to-end tests with Playwright (covering the PWA, responsiveness from 360 to 1440px and accessibility checks with axe). Manually deployed with Docker on Kubernetes (k3s) over HTTPS."),
     h("Status and limitations"),
-    p("This release is <strong>frontend-only</strong>: login, payment and certificate lookup are simulated, data lives only in the user's browser, no payment gateway or server is connected, and certificates are not official credentials. Displayed ratings and counts are sample data."),
+    p("The current release is <strong>frontend-only</strong>: login, payment and certificate lookup are simulated, data is stored only in the user's browser, and no server or real payment gateway is connected. Displayed ratings and counts are sample data."),
     h("Project details"),
-    ul(["Commissioned by: Kavian Academy (instructor: Mr. Amir Kavian)", "Industry: Online education (mathematics) · Language: Persian · Design: responsive, right-to-left", "Designed and developed by Tafakor Pardazan — <a href=\"https://tafakorpardazan.ir/en/home/\">tafakorpardazan.ir</a>"]),
+    ul(["Commissioned by: Kavian Academy · Mathematics teacher: Mr. Amir Kavian", "Industry: Online education (mathematics) · Language: Persian · Design: responsive, right-to-left", `Website: <a href="${LIVE}" target="_blank" rel="noopener">${LIVE}</a>`, "Designed and developed by Tafakor Pardazan — <a href=\"https://tafakorpardazan.ir/en/home/\">tafakorpardazan.ir</a>"]),
     btn("Visit TeachTech"),
   ].join("\n\n"),
 };
 
-// No category ids are hard-coded: the education category on the portfolio site must be assigned in wp-admin (or added here once known).
+// Category: the existing "Web apps" term (FA 186 / EN 224). Excerpt doubles as the meta description (the site's Yoast setup derives it from the excerpt).
 const META = {
-  fa: { title: "TeachTech؛ پلتفرم آموزش آنلاین ریاضی", slug: "teachtech", excerpt: "پلتفرم آموزش آنلاین ریاضی با دوره‌های ویدیویی، آزمون تعاملی، داشبورد دانش‌آموز/مدرس/مدیر، گواهی پایان دوره و اپلیکیشن قابل نصب؛ به سفارش آموزشگاه کاویان." },
-  en: { title: "TeachTech — Online Mathematics Learning Platform", slug: "teachtech-online-learning-platform", excerpt: "An online mathematics learning platform with video lessons, interactive quizzes, student/instructor/admin dashboards, certificates and an installable app. Commissioned by Kavian Academy." },
+  fa: { title: "طراحی و توسعه سامانه آموزش آنلاین TeachTech", slug: "teachtech", cat: [186],
+    seoTitle: "طراحی سامانه آموزش آنلاین TeachTech | تفکر پردازان",
+    excerpt: "معرفی پروژه TeachTech، سامانه آموزش آنلاین و مدیریت دوره‌های آموزشی به سفارش آموزشگاه کاویان و آقای امیر کاویان، توسعه‌یافته توسط تفکر پردازان." },
+  en: { title: "TeachTech — Online Learning Platform for Kavian Academy", slug: "teachtech-online-learning-platform", cat: [224],
+    seoTitle: "TeachTech Online Learning Platform | Tafakor Pardazan",
+    excerpt: "Explore TeachTech, an online learning platform developed by Tafakor Pardazan for Kavian Academy, commissioned by mathematics teacher Amir Kavian." },
 };
 
 const ids = {};
 for (const lang of ["fa", "en"]) {
   const m = META[lang];
-  const body = { title: m.title, slug: m.slug, status: STATUS, excerpt: m.excerpt, content: CONTENT[lang], featured_media: media["teachtech-home"].id, tp_technology: techIds[lang] };
+  const body = { title: m.title, slug: m.slug, status: STATUS, excerpt: m.excerpt, content: CONTENT[lang], featured_media: media["teachtech-mockup-4x3"].id, tp_project_category: m.cat, tp_technology: techIds[lang], meta: { _yoast_wpseo_title: m.seoTitle, _yoast_wpseo_metadesc: m.excerpt } };
   const existing = await api(`/wp/v2/tp_project?slug=${m.slug}&status=any&context=edit&_fields=id`);
   const res = existing.length ? await post(`/wp/v2/tp_project/${existing[0].id}`, body) : await post(`/wp/v2/tp_project?lang=${lang}`, body);
   ids[lang] = res.id;
-  console.log(lang, JSON.stringify(await api(`/wp/v2/tp_project/${res.id}?context=edit&_fields=id,status,permalink_template`)));
+  console.log(lang, JSON.stringify(await api(`/wp/v2/tp_project/${res.id}?context=edit&_fields=id,status,meta`)));
 }
 await post("/tp/v1/translations", { kind: "post", translations: ids });
-for (const lang of ["fa", "en"]) console.log("final", lang, JSON.stringify(await api(`/wp/v2/tp_project/${ids[lang]}?context=edit&_fields=id,status,link,permalink_template`)));
+for (const lang of ["fa", "en"]) console.log("final", lang, JSON.stringify(await api(`/wp/v2/tp_project/${ids[lang]}?context=edit&_fields=id,status,link,permalink_template,yoast_head_json.title`)));

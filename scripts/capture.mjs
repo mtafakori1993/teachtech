@@ -8,15 +8,19 @@ const mobile = { ...devices["Pixel 5"], viewport: { width: 390, height: 844 }, l
 async function session(opts, role) {
   const ctx = await b.newContext(opts); const p = await ctx.newPage();
   if (role) {
-    await p.goto(base + "/login");
+    await go(p, "/login");
     await p.getByRole("button", { name: new RegExp({ student: "دانش‌آموز: سارا", instructor: "مدرس: امیر", admin: "مدیر آموزشگاه: مدیریت" }[role]) }).click();
     await p.waitForURL(new RegExp({ student: "dashboard", instructor: "instructor", admin: "admin" }[role]));
   }
   return { ctx, p };
 }
-const shot = async (p, url, name, full = false, pre) => { await p.goto(base + url); await p.waitForLoadState("networkidle"); if (pre) await pre(p); await p.waitForTimeout(700); await p.screenshot({ path: `screenshots/${name}.png`, fullPage: full }); console.log("ok", name); };
+// Navigation retries: the public link to the site drops connections intermittently.
+async function go(p, url) { for (let i = 1; i <= 6; i++) { try { await p.goto(base + url, { waitUntil: "load", timeout: 40000 }); await p.waitForLoadState("networkidle", { timeout: 15000 }).catch(() => {}); return; } catch (e) { console.log("  retry", url, i); await p.waitForTimeout(1500 * i); } } throw new Error("unreachable " + url); }
+const shot = async (p, url, name, full = false, pre) => { await go(p, url); if (pre) await pre(p); await p.waitForTimeout(700); await p.screenshot({ path: `screenshots/${name}.png`, fullPage: full }); console.log("ok", name); };
 
-let { ctx, p } = await session(desktop);
+const PWA_ONLY = process.env.ONLY === "pwa";
+let { ctx, p } = PWA_ONLY ? {} : await session(desktop);
+if (!PWA_ONLY) {
 await shot(p, "/", "01-home-desktop", true);
 await shot(p, "/courses", "02-catalog-desktop");
 await shot(p, "/courses/calculus-12-limit-derivative", "03-course-detail-desktop", true);
@@ -29,9 +33,9 @@ await shot(p, "/learn/math-11-functions-limits?lesson=c03-l1", "06-video-learnin
 await shot(p, "/learn/math-11-functions-limits?lesson=c03-l5", "07-lesson-board-desktop");
 await shot(p, "/quiz/q-c14-final", "08-quiz-intro-desktop");
 await shot(p, "/dashboard/quizzes", "09-student-quizzes-desktop", true);
-await p.goto(base + "/quiz/q-c10-final"); const href = await p.locator('a:has-text("مرور")').first().getAttribute("href"); await shot(p, href, "10-quiz-results-desktop", true);
+await go(p, "/quiz/q-c10-final"); const href = await p.locator('a:has-text("مرور")').first().getAttribute("href"); await shot(p, href, "10-quiz-results-desktop", true);
 await shot(p, "/dashboard/certificates", "11-student-certificates-desktop");
-const cert = await (async () => { await p.goto(base + "/dashboard/certificates"); return p.getByRole("link", { name: /مشاهده و چاپ/ }).first().getAttribute("href"); })();
+const cert = await (async () => { await go(p, "/dashboard/certificates"); return p.getByRole("link", { name: /مشاهده و چاپ/ }).first().getAttribute("href"); })();
 await shot(p, cert, "12-certificate-desktop", true);
 await shot(p, "/dashboard/calendar", "13-learning-calendar-desktop", true);
 await ctx.close();
@@ -57,13 +61,14 @@ await shot(p, "/dashboard", "22-student-dashboard-mobile", true);
 await shot(p, "/learn/math-11-functions-limits?lesson=c03-l1", "23-video-learning-mobile");
 await ctx.close();
 
+}
 // PWA install experience: synthetic beforeinstallprompt (Chromium installability UI itself is outside page screenshots)
 ctx = await b.newContext(mobile); p = await ctx.newPage();
-await p.addInitScript(() => setTimeout(() => { const e = new Event("beforeinstallprompt", { cancelable: true }); e.prompt = async () => {}; e.userChoice = new Promise(() => {}); window.dispatchEvent(e); }, 200));
-await p.goto(base + "/"); await p.getByRole("complementary", { name: "نصب اپلیکیشن" }).waitFor({ timeout: 30000 }); await p.waitForTimeout(600);
+await p.addInitScript(() => window.addEventListener("DOMContentLoaded", () => setTimeout(() => { const e = new Event("beforeinstallprompt", { cancelable: true }); e.prompt = async () => {}; e.userChoice = new Promise(() => {}); window.dispatchEvent(e); }, 300)));
+await go(p, "/"); await p.getByRole("complementary", { name: "نصب اپلیکیشن" }).waitFor({ timeout: 45000 }); await p.waitForTimeout(600);
 await p.screenshot({ path: "screenshots/24-pwa-install-banner-mobile.png" }); console.log("ok 24");
 await ctx.close();
 ctx = await b.newContext({ ...mobile, userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" }); p = await ctx.newPage();
-await p.goto(base + "/"); await p.getByRole("complementary", { name: "نصب اپلیکیشن" }).waitFor({ timeout: 30000 }); await p.getByRole("button", { name: "راهنمای نصب" }).click(); await p.waitForTimeout(600);
+await go(p, "/"); await p.getByRole("complementary", { name: "نصب اپلیکیشن" }).waitFor({ timeout: 45000 }); await p.getByRole("button", { name: "راهنمای نصب" }).click(); await p.waitForTimeout(600);
 await p.screenshot({ path: "screenshots/25-pwa-ios-instructions-mobile.png" }); console.log("ok 25");
 await ctx.close(); await b.close();
