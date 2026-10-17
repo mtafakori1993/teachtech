@@ -64,12 +64,13 @@ test("private areas and API are never stored by the service worker", async ({ pa
 test("install banner: appears only after beforeinstallprompt, native prompt fires only on click, dismissal is remembered", async ({ page }) => {
   await page.addInitScript(() => {
     (window as unknown as { __prompted: number }).__prompted = 0;
-    setTimeout(() => {
+    // Browsers fire beforeinstallprompt after the page has loaded, so mimic that rather than a fixed delay from navigation start.
+    window.addEventListener("DOMContentLoaded", () => setTimeout(() => {
       const ev = new Event("beforeinstallprompt", { cancelable: true }) as Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
       ev.prompt = async () => { (window as unknown as { __prompted: number }).__prompted++; };
       ev.userChoice = Promise.resolve({ outcome: "dismissed" });
       window.dispatchEvent(ev);
-    }, 300);
+    }, 300));
   });
   await page.goto("/");
   const banner = page.getByRole("complementary", { name: "نصب اپلیکیشن" });

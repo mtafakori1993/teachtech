@@ -8,13 +8,14 @@ export const SITE = {
   academy: "آموزشگاه کاویان",
   instructor: "امیر کاویان",
   developer: "تفکر پردازان",
-  supportEmail: "support@teachtech.example",
-  supportPhone: "۰۲۱-۰۰۰۰۰۰۰۰",
+  supportEmail: "info@tafakorpardazan.ir",
+  supportPhone: "۰۹۰۴۰۱۵۳۲۱۲",
+  supportPhoneTel: "09040153212",
   themeColor: "#2F80ED",
   bg: "#FFFDF5",
 } as const;
 
 /** Bump when seed data shape/content changes: older persisted local data is discarded safely. */
-export const DATA_VERSION = 1;
+export const DATA_VERSION = 2;
 export const STORAGE_KEY = "teachtech.state";
 export const INSTALL_DISMISS_KEY = "teachtech.install.dismissed";

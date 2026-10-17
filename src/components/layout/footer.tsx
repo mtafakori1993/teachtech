@@ -20,8 +20,8 @@ export function Footer() {
           <Logo tagline />
           <p className="mt-4 max-w-xs text-sm leading-7 text-ink-600">دوره‌های ریاضی دبیرستان با تدریس آقای امیر کاویان؛ به سفارش آموزشگاه کاویان.</p>
           <ul className="mt-4 space-y-2 text-sm text-ink-700">
-            <li className="flex items-center gap-2"><Mail className="size-4 text-brand-600" aria-hidden /><span dir="ltr">{SITE.supportEmail}</span></li>
-            <li className="flex items-center gap-2"><Phone className="size-4 text-brand-600" aria-hidden />{SITE.supportPhone}</li>
+            <li className="flex items-center gap-2"><Mail className="size-4 text-brand-600" aria-hidden /><a href={`mailto:${SITE.supportEmail}`} dir="ltr" className="hover:text-brand-700">{SITE.supportEmail}</a></li>
+            <li className="flex items-center gap-2"><Phone className="size-4 text-brand-600" aria-hidden /><a href={`tel:${SITE.supportPhoneTel}`} className="hover:text-brand-700">{SITE.supportPhone}</a></li>
             <li className="flex items-center gap-2"><MapPin className="size-4 text-brand-600" aria-hidden />پشتیبانی آنلاین · همهٔ روزهای هفته</li>
           </ul>
         </div>

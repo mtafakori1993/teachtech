@@ -23,6 +23,8 @@ test("catalog: search, filters, sorting and empty state work against local data"
   await page.getByLabel("پایهٔ تحصیلی").selectOption("12");
   await expect(page.locator("article").first()).toBeVisible();
   await page.getByLabel("مرتب‌سازی:").selectOption("price-asc");
+  await expect(page).toHaveURL(/sort=price-asc/);
+  await page.waitForTimeout(500);
   const prices = await page.locator("article .tabular.font-bold").allTextContents();
   const nums = prices.map((t) => Number(t.replace(/[^\d۰-۹]/g, "").replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))));
   expect(nums).toEqual([...nums].sort((a, b) => a - b));

@@ -212,7 +212,7 @@ export function buildSeed(): SeedData {
       showAnnouncement: true,
       featuredCourseIds: ["c07", "c10", "c03", "c14"],
     },
-    settings: { academyName: "آموزشگاه کاویان", supportEmail: "support@teachtech.example", supportPhone: "۰۲۱-۰۰۰۰۰۰۰۰", certificatePassPercent: 60, allowRetakeAfterPass: false, maintenance: false },
+    settings: { academyName: "آموزشگاه کاویان", supportEmail: "info@tafakorpardazan.ir", supportPhone: "۰۹۰۴۰۱۵۳۲۱۲", certificatePassPercent: 60, allowRetakeAfterPass: false, maintenance: false },
     prefs: { weeklyGoalMin: 180, emailDigest: true, reminders: true, reduceMotion: false },
   };
 }
